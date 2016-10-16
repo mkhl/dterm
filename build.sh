@@ -42,6 +42,7 @@ main() {
           exit 1
         fi
         CODESIGN_IDENTITY="$1"
+        shift
         ;;
       --with-dmg)
         BUILD="yes";
