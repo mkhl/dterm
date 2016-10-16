@@ -15,6 +15,12 @@
 
 static void * DTPreferencesContext = &DTPreferencesContext;
 
+@interface DTTermWindowController ()
+- (void)executeCommandInTerminalApp:(TerminalApplication *)terminal;
+- (void)executeCommandInOldITerm:(iTerm2ITermApplication *)iTerm;
+- (void)executeCommandInNewITerm:(iTerm2NightlyApplication *)iTerm;
+@end
+
 @implementation DTTermWindowController
 
 @synthesize workingDirectory, selectedURLs, command, runs, runsController;
@@ -224,90 +230,20 @@ static void * DTPreferencesContext = &DTPreferencesContext;
 	// Commit editing first
 	if(![[self window] makeFirstResponder:[self window]])
 		return;
-	
-	NSString* cdCommandString = [NSString stringWithFormat:@"cd %@", escapedPath(self.workingDirectory)];
-	
-	id iTerm = [SBApplication applicationWithBundleIdentifier:@"net.sourceforge.iTerm"];
-	if(!iTerm)
-		iTerm = [SBApplication applicationWithBundleIdentifier:@"com.googlecode.iterm2"];
-    
-    // test for iTerms newer scripting bridge
-    if(iTerm && [iTerm respondsToSelector:@selector(createWindowWithDefaultProfileCommand:)]) {
-        iTerm2NightlyWindow *terminal = nil;
-        iTerm2NightlySession  *session  = nil;
-        
-        if([iTerm isRunning]) {
-            [iTerm createWindowWithDefaultProfileCommand:nil];
-        }
-        terminal = [iTerm valueForKey:@"currentWindow"];
-        session = [terminal valueForKey:@"currentSession"];
-        
-        // write text "cd ~/whatever"
-        [session writeContentsOfFile:nil text:cdCommandString newline:true];
-        
-        // write text "thecommand"
-        if ([self.command length] > 0) {
-            [session writeContentsOfFile:nil text:self.command newline:true];
-        }
-        
-        [iTerm activate];
-    } else if(iTerm && [iTerm respondsToSelector:@selector(isRunning)]) { // assume old scripting bridge
-		iTerm2Terminal *terminal = nil;
-		iTerm2Session  *session  = nil;
-		
-		if([iTerm isRunning]) {
-			// set terminal to (make new terminal at the end of terminals)
-			terminal = [[[iTerm classForScriptingClass:@"terminal"] alloc] init];
-			[[iTerm terminals] addObject:terminal];
-			
-			// set session to (make new session at the end of sessions)
-			session = [[[iTerm classForScriptingClass:@"session"] alloc] init];
-			[[terminal sessions] addObject:session];
+
+	id terminal = [SBApplication applicationWithBundleIdentifier:@"com.apple.Terminal"];
+	id iTerm = [SBApplication applicationWithBundleIdentifier:@"net.sourceforge.iTerm"] ?: [SBApplication applicationWithBundleIdentifier:@"com.googlecode.iterm2"];
+
+	BOOL useITerm = iTerm;
+
+	if (useITerm) {
+		if([iTerm respondsToSelector:@selector(createWindowWithDefaultProfileCommand:)]) {
+			[self executeCommandInNewITerm:iTerm];
 		} else {
-			// It wasn't running yet, so just use the "current" terminal/session so we don't open more than one
-			terminal = [iTerm valueForKey:@"currentTerminal"];
-			session = [terminal valueForKey:@"currentSession"];
+			[self executeCommandInOldITerm:iTerm];
 		}
-		
-		// set shell to system attribute "SHELL"
-		// exec command shell
-		[session execCommand:[DTRunManager shellPath]];
-		
-		// write text "cd ~/whatever"
-		[session writeContentsOfFile:nil text:cdCommandString];
-		
-        // write text "thecommand"
-        if ([self.command length] > 0) {
-            [session writeContentsOfFile:nil text:self.command];
-        }
-		[iTerm activate];
 	} else {
-		TerminalApplication* terminal = (TerminalApplication *)[SBApplication applicationWithBundleIdentifier:@"com.apple.Terminal"];
-		BOOL terminalAlreadyRunning = [terminal isRunning];
-		
-		TerminalWindow* frontWindow = [[terminal windows] firstObject];
-		if(![frontWindow exists])
-			frontWindow = nil;
-		else
-			frontWindow = [frontWindow get];
-		
-		TerminalTab* tab = nil;
-		if(frontWindow) {
-			if(!terminalAlreadyRunning) {
-				tab = [[frontWindow tabs] firstObject];
-			} else if(/*terminalUsesTabs*/false) {
-				tab = [[[terminal classForScriptingClass:@"tab"] alloc] init];
-				[[frontWindow tabs] addObject:tab];
-			}
-		}
-		
-		tab = [terminal doScript:cdCommandString in:tab];
-        
-        if ([self.command length] > 0) {
-            [terminal doScript:self.command in:tab];
-        }
-		
-		[terminal activate];
+		[self executeCommandInTerminalApp:terminal];
 	}
 }
 
@@ -422,7 +358,73 @@ static void * DTPreferencesContext = &DTPreferencesContext;
 	return completions;
 }
 
-#pragma mark font/color support
+#pragma mark - terminal support
+
+- (void)executeCommandInTerminalApp:(TerminalApplication *)terminal {
+  TerminalTab* tab = nil;
+  if (![terminal isRunning])
+    tab = [[[[terminal windows] firstObject] tabs] firstObject];
+  
+  NSString* cd = [NSString stringWithFormat:@"cd %@", escapedPath(self.workingDirectory)];
+  tab = [terminal doScript:cd in:tab];
+  
+  if ([self.command length] > 0)
+    [terminal doScript:self.command in:tab];
+  
+  [terminal activate];
+}
+
+- (void)executeCommandInOldITerm:(iTerm2ITermApplication *)iTerm {
+  iTerm2Terminal* terminal = nil;
+  iTerm2Session*  session  = nil;
+  
+  if ([iTerm isRunning]) {
+    // set terminal to (make new terminal at the end of terminals)
+    terminal = [[[iTerm classForScriptingClass:@"terminal"] alloc] init];
+    [[iTerm terminals] addObject:terminal];
+    
+    // set session to (make new session at the end of sessions)
+    session = [[[iTerm classForScriptingClass:@"session"] alloc] init];
+    [[terminal sessions] addObject:session];
+  } else {
+    // It wasn't running yet, so just use the "current" terminal/session so we don't open more than one
+    terminal = [iTerm currentTerminal];
+    session = [terminal currentSession];
+  }
+  
+  NSString* shell = [DTRunManager shellPath];
+  [session execCommand:shell];
+  
+  NSString* cd = [NSString stringWithFormat:@"cd %@", escapedPath(self.workingDirectory)];
+  [session writeContentsOfFile:nil text:cd];
+  
+  if ([self.command length] > 0)
+    [session writeContentsOfFile:nil text:self.command];
+  
+  [iTerm activate];
+}
+
+- (void)executeCommandInNewITerm:(iTerm2NightlyApplication *)iTerm {
+  iTerm2NightlyWindow*  terminal = nil;
+  iTerm2NightlySession* session  = nil;
+  
+  NSString* shell = [DTRunManager shellPath];
+  if ([iTerm isRunning])
+    [iTerm createWindowWithDefaultProfileCommand:shell];
+  
+  terminal = [iTerm currentWindow];
+  session = [terminal currentSession];
+  
+  NSString* cd = [NSString stringWithFormat:@"cd %@", escapedPath(self.workingDirectory)];
+  [session writeContentsOfFile:nil text:cd newline:true];
+  
+  if ([self.command length] > 0)
+    [session writeContentsOfFile:nil text:self.command newline:true];
+  
+  [iTerm activate];
+}
+
+#pragma mark - font/color support
 
 - (void)observeValueForKeyPath:(NSString *)keyPath
 					  ofObject:(id)object
