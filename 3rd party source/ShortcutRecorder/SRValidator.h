@@ -17,6 +17,7 @@
     id              delegate;
 }
 
+- (instancetype)init NS_UNAVAILABLE;
 - (instancetype) initWithDelegate:(id)theDelegate NS_DESIGNATED_INITIALIZER;
 
 - (BOOL) isKeyCode:(NSInteger)keyCode andFlagsTaken:(NSUInteger)flags error:(NSError **)error;

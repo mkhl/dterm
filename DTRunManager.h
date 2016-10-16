@@ -30,6 +30,7 @@
 + (NSString*)shellPath;
 + (NSArray*)argumentsToRunCommand:(NSString*)command;
 
+- (instancetype)init NS_UNAVAILABLE;
 - (instancetype)initWithWD:(NSString*)_wd selection:(NSArray*)_selection command:(NSString*)_command NS_DESIGNATED_INITIALIZER;
 - (IBAction)cancel:(id)sender;
 
