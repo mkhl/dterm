@@ -234,7 +234,7 @@ static void * DTPreferencesContext = &DTPreferencesContext;
 	id terminal = [SBApplication applicationWithBundleIdentifier:@"com.apple.Terminal"];
 	id iTerm = [SBApplication applicationWithBundleIdentifier:@"net.sourceforge.iTerm"] ?: [SBApplication applicationWithBundleIdentifier:@"com.googlecode.iterm2"];
 
-	BOOL useITerm = iTerm;
+	BOOL useITerm = iTerm && ([iTerm isRunning] || ![terminal isRunning]);
 
 	if (useITerm) {
 		if([iTerm respondsToSelector:@selector(createWindowWithDefaultProfileCommand:)]) {
